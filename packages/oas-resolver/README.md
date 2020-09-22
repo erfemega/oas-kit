@@ -1,4 +1,8 @@
 # oas-resolver
+Forked from https://github.com/Mermade/oas-kit
+
+v2.5.0 
+- Sync with https://github.com/Mermade/oas-kit v2.5.0
 
 ## Usage
 
