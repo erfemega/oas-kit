@@ -27,7 +27,13 @@ function readFileAsync(filename, encoding, options, pointer, def) {
                 resolve(files[filename]);
             }
             else {
-                reject('Could not read file.');
+                if (options.ignoreIOErrors && def) {
+                    options.externalRefs[pointer].failed = true;
+                    resolve(def);
+                }
+                else {
+                    reject('Could not read file: ' + filename);
+                }
             }
         }
         else {
