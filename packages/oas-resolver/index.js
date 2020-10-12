@@ -1,7 +1,7 @@
 'use strict';
 
 const fs = require('fs');
-const path = require('path-browserify');
+const path = typeof process === 'object' ? require('path') : require('path-browserify');
 const url = require('url');
 
 const fetch = require('node-fetch-h2');
