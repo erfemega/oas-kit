@@ -1,7 +1,8 @@
 'use strict';
 
 const fs = require('fs');
-const path = typeof process === 'object' ? require('path') : require('path-browserify');
+var path = require('path');
+var pathBrowserify = require('path-browserify');
 const url = require('url');
 
 const fetch = require('node-fetch-h2');
@@ -172,6 +173,9 @@ function resolveExternal(root, pointer, options, callback) {
 
     let target;
     if (effectiveProtocol === 'file:') {
+        if (options.browser) {
+            path = pathBrowserify;
+        }
         target = path.resolve(base ? base + '/' : '', pointer);
     }
     else {
@@ -507,6 +511,9 @@ function setupOptions(options) {
     if (options.source) {
         let srcUrl = url.parse(options.source);
         if (!srcUrl.protocol || srcUrl.protocol.length <= 2) { // windows drive-letters
+            if (options.browser) {
+                path = pathBrowserify;
+            }
             options.source = path.resolve(options.source);
         }
     }
