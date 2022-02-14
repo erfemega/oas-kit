@@ -429,12 +429,6 @@ function findExternalRefs(options) {
                             });
 
                             for (let ptr of pointers) {
-                                // shared x-ms-examples $refs confuse the fixupRefs heuristic in index.js
-                                // if (refs[ref].resolvedAt && (ptr !== refs[ref].resolvedAt) && (ptr.indexOf('x-ms-examples/')<0)) {
-                                //     if (options.verbose>1) console.warn('Creating pointer to data at', ptr);
-                                //     jptr(options.openapi, ptr, { $ref: refs[ref].resolvedAt+refs[ref].extras[ptr], 'x-miro': ref+refs[ref].extras[ptr] }); // resolutionCase:E (new object)
-                                // }
-                                // else {
                                 if (refs[ref].resolvedAt) {
                                     if (options.verbose>1) console.warn('Avoiding circular reference');
                                 }
@@ -477,6 +471,13 @@ const serial = funcs =>
     funcs.reduce((promise, func) =>
         promise.then(result => func().then(Array.prototype.concat.bind(result))), Promise.resolve([]));
 
+/**
+* Dereferences the local $refs provided in the object
+* @param o The provided object to be dereferenced
+* @definitions A source of referenced definitions
+* @options optional settings, used recursively
+* @return the dereferenced object
+*/
 function localDeref(o,definitions,options) {
     if (!options) options = {};
     if (!options.cache) options.cache = {};
