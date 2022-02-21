@@ -10,8 +10,7 @@ const yaml = require('yaml');
 const jptr = require('reftools/lib/jptr.js').jptr;
 const recurse = require('reftools/lib/recurse.js').recurse;
 const clone = require('reftools/lib/clone.js').clone;
-const shallowClone = require('reftools/lib/clone.js').shallowClone;
-const deRef = require('reftools/lib/dereference.js').dereference;
+const localDeref = require('reftools/lib/dereference.js').localDeref;
 const isRef = require('reftools/lib/isref.js').isRef;
 const common = require('oas-kit-common');
 const OUTER_PROPS_SUPPORTED_VERSIONS = ['3.1'];
@@ -429,6 +428,12 @@ function findExternalRefs(options) {
                             });
 
                             for (let ptr of pointers) {
+                                // shared x-ms-examples $refs confuse the fixupRefs heuristic in index.js
+                                // if (refs[ref].resolvedAt && (ptr !== refs[ref].resolvedAt) && (ptr.indexOf('x-ms-examples/')<0)) {
+                                //     if (options.verbose>1) console.warn('Creating pointer to data at', ptr);
+                                //     jptr(options.openapi, ptr, { $ref: refs[ref].resolvedAt+refs[ref].extras[ptr], 'x-miro': ref+refs[ref].extras[ptr] }); // resolutionCase:E (new object)
+                                // }
+                                // else {
                                 if (refs[ref].resolvedAt) {
                                     if (options.verbose>1) console.warn('Avoiding circular reference');
                                 }
@@ -470,89 +475,6 @@ function findExternalRefs(options) {
 const serial = funcs =>
     funcs.reduce((promise, func) =>
         promise.then(result => func().then(Array.prototype.concat.bind(result))), Promise.resolve([]));
-
-/**
-* Dereferences the local $refs provided in the object
-* @param o The provided object to be dereferenced
-* @definitions A source of referenced definitions
-* @options optional settings, used recursively
-* @return the dereferenced object
-*/
-function localDeref(o,definitions,options) {
-    if (!options) options = {};
-    if (!options.cache) options.cache = {};
-    if (!options.state) options.state = {};
-    options.state.identityDetection = true;
-    // options.depth allows us to limit cloning to the first invocation
-    options.depth = (options.depth ? options.depth+1 : 1);
-    let obj = (options.depth > 1 ? o : shallowClone(o));
-    let container = { data: obj };
-    let defs = (options.depth > 1 ? definitions : shallowClone(definitions));
-    // options.master is the top level object, regardless of depth
-    if (!options.master) options.master = obj;
-
-    // let logger = getLogger(options);
-
-    let changes = 1;
-    while (changes > 0) {
-        changes = 0;
-    recurse(container,options.state,function(obj,key,state){
-        if (isRef(obj,key)) {
-            let $ref = obj[key]; // immutable
-            let parentData = state.parent[state.pkey],
-                outerProps = clone(parentData),
-                dataWithOuterProps;
-            delete outerProps.$ref;
-            changes++;
-            if (!options.cache[$ref]) {
-                let entry = {};
-                entry.path = state.path.split('/$ref')[0];
-                entry.key = $ref;
-                console.warn('Dereffing %s at %s',$ref,entry.path);
-                entry.source = defs;
-                entry.data = jptr(entry.source,entry.key);
-                if (entry.data === false) {
-                    entry.data = jptr(options.master,entry.key);
-                    entry.source = options.master;
-                }
-                if (entry.data === false) {
-                    console.warn('Missing $ref target',entry.key);
-                }
-                options.cache[$ref] = entry;
-                entry.data = localDeref(entry.data,entry.source,options);
-                dataWithOuterProps = addOuterProps(entry.data, outerProps);
-                state.parent[state.pkey] = localDeref(dataWithOuterProps,entry.source,options);
-                if ((options.$ref) && (typeof state.parent[state.pkey] === 'object')) state.parent[state.pkey][options.$ref] = $ref;
-                entry.resolved = true;
-            }
-            else {
-                let entry = options.cache[$ref];
-                if (entry.resolved) {
-                    // we have already seen and resolved this reference
-                    console.warn('Patching %s for %s',$ref,entry.path);
-                    dataWithOuterProps = addOuterProps(entry.data, outerProps);
-                    state.parent[state.pkey] = dataWithOuterProps;
-                    if ((options.$ref) && (typeof state.parent[state.pkey] === 'object')) state.parent[state.pkey][options.$ref] = $ref;
-                }
-                else if ($ref === entry.path) {
-                    // reference to itself, throw
-                    throw new Error(`Tight circle at ${entry.path}`);
-                }
-                else {
-                    // we're dealing with a circular reference here
-                    console.warn('Unresolved ref');
-                    state.parent[state.pkey] = jptr(entry.source,entry.path);
-                    if (state.parent[state.pkey] === false) {
-                        state.parent[state.pkey] = jptr(entry.source,entry.key);
-                    }
-                    if ((options.$ref) && (typeof state.parent[state.pkey] === 'object')) state.parent[options.$ref] = $ref;
-                }
-            }
-        }
-    });
-    }
-    return container.data;
-}
 
 function loopReferences(options, res, rej) {
     options.resolver.actions.push([]);

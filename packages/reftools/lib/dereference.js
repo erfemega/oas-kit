@@ -99,7 +99,95 @@ function dereference(o,definitions,options) {
     return container.data;
 }
 
+function addOuterProps(refSchema, outerProps) {
+    const resolvedSchema = clone(refSchema),
+        outerKeys = Object.keys(outerProps);
+    outerKeys.forEach((key) => {
+        resolvedSchema[key] = (resolvedSchema[key] && Array.isArray(resolvedSchema[key])) ?
+            [...new Set([...resolvedSchema[key], ...outerProps[key]])] :
+            outerProps[key];
+        });
+    return resolvedSchema;
+}
+
+function localDeref(o,definitions,options) {
+    if (!options) options = {};
+    if (!options.cache) options.cache = {};
+    if (!options.state) options.state = {};
+    options.state.identityDetection = true;
+    // options.depth allows us to limit cloning to the first invocation
+    options.depth = (options.depth ? options.depth+1 : 1);
+    let obj = (options.depth > 1 ? o : clone(o));
+    let container = { data: obj };
+    let defs = (options.depth > 1 ? definitions : clone(definitions));
+    // options.master is the top level object, regardless of depth
+    if (!options.master) options.master = obj;
+
+    // let logger = getLogger(options);
+
+    let changes = 1;
+    while (changes > 0) {
+        changes = 0;
+    recurse(container,options.state,function(obj,key,state){
+        if (isRef(obj,key)) {
+            let $ref = obj[key]; // immutable
+            let parentData = state.parent[state.pkey],
+                outerProps = clone(parentData),
+                dataWithOuterProps;
+            delete outerProps.$ref;
+            changes++;
+            if (!options.cache[$ref]) {
+                let entry = {};
+                entry.path = state.path.split('/$ref')[0];
+                entry.key = $ref;
+                console.warn('Dereffing %s at %s',$ref,entry.path);
+                entry.source = defs;
+                entry.data = jptr(entry.source,entry.key);
+                if (entry.data === false) {
+                    entry.data = jptr(options.master,entry.key);
+                    entry.source = options.master;
+                }
+                if (entry.data === false) {
+                    console.warn('Missing $ref target',entry.key);
+                }
+                options.cache[$ref] = entry;
+                entry.data = localDeref(entry.data,entry.source,options);
+                dataWithOuterProps = addOuterProps(entry.data, outerProps);
+                state.parent[state.pkey] = localDeref(dataWithOuterProps,entry.source,options);
+                if ((options.$ref) && (typeof state.parent[state.pkey] === 'object')) state.parent[state.pkey][options.$ref] = $ref;
+                entry.resolved = true;
+            }
+            else {
+                let entry = options.cache[$ref];
+                if (entry.resolved) {
+                    // we have already seen and resolved this reference
+                    console.warn('Patching %s for %s',$ref,entry.path);
+                    dataWithOuterProps = addOuterProps(entry.data, outerProps);
+                    state.parent[state.pkey] = dataWithOuterProps;
+                    if ((options.$ref) && (typeof state.parent[state.pkey] === 'object')) state.parent[state.pkey][options.$ref] = $ref;
+                }
+                else if ($ref === entry.path) {
+                    // reference to itself, throw
+                    throw new Error(`Tight circle at ${entry.path}`);
+                }
+                else {
+                    // we're dealing with a circular reference here
+                    console.warn('Unresolved ref');
+                    state.parent[state.pkey] = jptr(entry.source,entry.path);
+                    if (state.parent[state.pkey] === false) {
+                        state.parent[state.pkey] = jptr(entry.source,entry.key);
+                    }
+                    if ((options.$ref) && (typeof state.parent[state.pkey] === 'object')) state.parent[options.$ref] = $ref;
+                }
+            }
+        }
+    });
+    }
+    return container.data;
+}
+
 module.exports = {
-    dereference : dereference
+    dereference : dereference,
+    localDeref: localDeref
 };
 
