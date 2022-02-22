@@ -99,14 +99,16 @@ function dereference(o,definitions,options) {
     return container.data;
 }
 
-function addOuterProps(refSchema, outerProps) {
+function handleOuterProps(refSchema, outerProps, { targetVersion, outerPropsSupportedVersions }) {
     const resolvedSchema = clone(refSchema),
         outerKeys = Object.keys(outerProps);
-    outerKeys.forEach((key) => {
-        resolvedSchema[key] = (resolvedSchema[key] && Array.isArray(resolvedSchema[key])) ?
-            [...new Set([...resolvedSchema[key], ...outerProps[key]])] :
-            outerProps[key];
-        });
+    if(targetVersion && outerPropsSupportedVersions && outerPropsSupportedVersions.includes(targetVersion)) {
+        outerKeys.forEach((key) => {
+            resolvedSchema[key] = (resolvedSchema[key] && Array.isArray(resolvedSchema[key])) ?
+                [...new Set([...resolvedSchema[key], ...outerProps[key]])] :
+                outerProps[key];
+            });
+    }
     return resolvedSchema;
 }
 
@@ -123,7 +125,7 @@ function localDeref(o,definitions,options) {
     // options.master is the top level object, regardless of depth
     if (!options.master) options.master = obj;
 
-    // let logger = getLogger(options);
+    let logger = getLogger(options);
 
     let changes = 1;
     while (changes > 0) {
@@ -140,7 +142,7 @@ function localDeref(o,definitions,options) {
                 let entry = {};
                 entry.path = state.path.split('/$ref')[0];
                 entry.key = $ref;
-                console.warn('Dereffing %s at %s',$ref,entry.path);
+                logger.warn('Dereffing %s at %s',$ref,entry.path);
                 entry.source = defs;
                 entry.data = jptr(entry.source,entry.key);
                 if (entry.data === false) {
@@ -148,11 +150,18 @@ function localDeref(o,definitions,options) {
                     entry.source = options.master;
                 }
                 if (entry.data === false) {
-                    console.warn('Missing $ref target',entry.key);
+                    logger.warn('Missing $ref target',entry.key);
                 }
                 options.cache[$ref] = entry;
                 entry.data = localDeref(entry.data,entry.source,options);
-                dataWithOuterProps = addOuterProps(entry.data, outerProps);
+                dataWithOuterProps = handleOuterProps(
+                    entry.data,
+                    outerProps,
+                    {
+                        targetVersion: options.targetVersion,
+                        outerPropsSupportedVersions: options.outerPropsSupportedVersions
+                    }
+                );
                 state.parent[state.pkey] = localDeref(dataWithOuterProps,entry.source,options);
                 if ((options.$ref) && (typeof state.parent[state.pkey] === 'object')) state.parent[state.pkey][options.$ref] = $ref;
                 entry.resolved = true;
@@ -161,8 +170,15 @@ function localDeref(o,definitions,options) {
                 let entry = options.cache[$ref];
                 if (entry.resolved) {
                     // we have already seen and resolved this reference
-                    console.warn('Patching %s for %s',$ref,entry.path);
-                    dataWithOuterProps = addOuterProps(entry.data, outerProps);
+                    logger.warn('Patching %s for %s',$ref,entry.path);
+                    dataWithOuterProps = handleOuterProps(
+                        entry.data,
+                        outerProps,
+                        {
+                            targetVersion: options.targetVersion,
+                            outerPropsSupportedVersions: options.outerPropsSupportedVersions
+                        }
+                    );
                     state.parent[state.pkey] = dataWithOuterProps;
                     if ((options.$ref) && (typeof state.parent[state.pkey] === 'object')) state.parent[state.pkey][options.$ref] = $ref;
                 }
@@ -172,7 +188,7 @@ function localDeref(o,definitions,options) {
                 }
                 else {
                     // we're dealing with a circular reference here
-                    console.warn('Unresolved ref');
+                    logger.warn('Unresolved ref');
                     state.parent[state.pkey] = jptr(entry.source,entry.path);
                     if (state.parent[state.pkey] === false) {
                         state.parent[state.pkey] = jptr(entry.source,entry.key);

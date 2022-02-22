@@ -13,7 +13,6 @@ const clone = require('reftools/lib/clone.js').clone;
 const localDeref = require('reftools/lib/dereference.js').localDeref;
 const isRef = require('reftools/lib/isref.js').isRef;
 const common = require('oas-kit-common');
-const OUTER_PROPS_SUPPORTED_VERSIONS = ['3.1'];
 
 function unique(arr) {
     return [... new Set(arr)];
@@ -374,14 +373,16 @@ function scanExternalRefs(options) {
     });
 }
 
-function addOuterProps(refSchema, outerProps) {
+function handleOuterProps(refSchema, outerProps, { targetVersion, outerPropsSupportedVersions }) {
     const resolvedSchema = clone(refSchema),
         outerKeys = Object.keys(outerProps);
-    outerKeys.forEach((key) => {
-        resolvedSchema[key] = (resolvedSchema[key] && Array.isArray(resolvedSchema[key])) ?
-            [...new Set([...resolvedSchema[key], ...outerProps[key]])] :
-            outerProps[key];
-        });
+    if (targetVersion && outerPropsSupportedVersions && outerPropsSupportedVersions.includes(targetVersion)) {
+        outerKeys.forEach((key) => {
+            resolvedSchema[key] = (resolvedSchema[key] && Array.isArray(resolvedSchema[key])) ?
+                [...new Set([...resolvedSchema[key], ...outerProps[key]])] :
+                outerProps[key];
+            });
+    }
     return resolvedSchema;
 }
 
@@ -437,11 +438,18 @@ function findExternalRefs(options) {
                                     if (options.verbose>1) console.warn('Creating initial clone of data at', ptr);
                                 }
                                 let cdata = clone(data);
-                                if (OUTER_PROPS_SUPPORTED_VERSIONS.includes(options.targetVersion)) {
+                                if (options.outerPropsSupportedVersions && options.outerPropsSupportedVersions.includes(options.targetVersion)) {
                                     let originalData = jptr(options.openapi, ptr),
                                     outerData = clone(originalData);
                                     delete outerData.$ref;
-                                    cdata = addOuterProps(cdata, outerData);
+                                    cdata = handleOuterProps(
+                                        cdata,
+                                        outerData,
+                                        { 
+                                            targetVersion: options.targetVersion,
+                                            outerPropsSupportedVersions: options.outerPropsSupportedVersions
+                                        }
+                                    );
                                 }   
                                 // jptr(options.openapi, ptr, cdata);
                                 jptr(options.openapi, ptr, cdata); // resolutionCase:F (cloned:yes)
@@ -491,7 +499,15 @@ function loopReferences(options, res, rej) {
                             if (options.verbose>1) console.warn(common.colour.yellow+'Finished external resolution!',common.colour.normal);
                             if (options.resolveInternal) {
                                 if (options.verbose>1) console.warn(common.colour.yellow+'Starting internal resolution!',common.colour.normal);
-                                options.openapi = localDeref(options.openapi,options.original,{verbose:options.verbose-1});
+                                options.openapi = localDeref(
+                                    options.openapi,
+                                    options.original,
+                                    {
+                                        verbose:options.verbose-1,
+                                        targetVersion: options.targetVersion,
+                                        outerPropsSupportedVersions: options.outerPropsSupportedVersions
+                                    }
+                                );
                                 if (options.verbose>1) console.warn(common.colour.yellow+'Finished internal resolution!',common.colour.normal);
                             }
                             recurse(options.openapi,{},function(obj,key,state){
