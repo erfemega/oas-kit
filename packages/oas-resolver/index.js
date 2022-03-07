@@ -374,8 +374,8 @@ function scanExternalRefs(options) {
 }
 
 function handleOuterProps(refSchema, outerProps, { targetVersion, outerPropsSupportedVersions }) {
-    const resolvedSchema = clone(refSchema),
-        outerKeys = Object.keys(outerProps);
+    const resolvedSchema = clone(refSchema);
+    const outerKeys = Object.keys(outerProps);
     if (targetVersion && outerPropsSupportedVersions && outerPropsSupportedVersions.includes(targetVersion)) {
         outerKeys.forEach((key) => {
             resolvedSchema[key] = (resolvedSchema[key] && Array.isArray(resolvedSchema[key])) ?
@@ -445,12 +445,12 @@ function findExternalRefs(options) {
                                     cdata = handleOuterProps(
                                         cdata,
                                         outerData,
-                                        { 
+                                        {
                                             targetVersion: options.targetVersion,
                                             outerPropsSupportedVersions: options.outerPropsSupportedVersions
                                         }
                                     );
-                                }   
+                                }
                                 // jptr(options.openapi, ptr, cdata);
                                 jptr(options.openapi, ptr, cdata); // resolutionCase:F (cloned:yes)
                                 // }
